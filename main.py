@@ -50,54 +50,55 @@ async def run_tool(fn_name: str, args: dict) -> dict:
         return {"error": f"Unknown function: {fn_name}"}
 
 
-@app.post("/livekit/actions")
-async def livekit_actions(request: Request):
+def _format_output(result: dict) -> str:
+    """Convert a result dict to a human-readable string the LLM can speak."""
+    if isinstance(result, dict):
+        return result.get("message") or json.dumps(result)
+    return str(result)
+
+
+@app.post("/livekit/check_availability")
+async def livekit_check_availability(request: Request):
     """
-    Handle LiveKit Action webhook calls.
-    LiveKit sends:  POST {"name": "fn_name", "arguments": {...}}
-    We respond:     {"output": "<string result for the LLM>"}
+    LiveKit HTTP tool — check_availability
+    LiveKit sends the tool parameters directly as the POST body:
+      {"date": "2024-05-28"}
     """
     try:
-        body = await request.json()
-        print(f"LiveKit action received: {json.dumps(body)}")
-
-        # Normalise across possible field-name variants LiveKit may use
-        fn_name = (
-            body.get("name")
-            or body.get("function_name")
-            or body.get("action")
-            or ""
-        )
-        args = (
-            body.get("arguments")
-            or body.get("parameters")
-            or body.get("args")
-            or {}
-        )
-        if isinstance(args, str):
-            try:
-                args = json.loads(args)
-            except json.JSONDecodeError:
-                args = {}
-
-        print(f"LiveKit tool: {fn_name} | args: {args}")
-
+        args = await request.json()
+        print(f"[check_availability] args: {args}")
         try:
-            result = await asyncio.wait_for(run_tool(fn_name, args), timeout=10.0)
+            result = await asyncio.wait_for(
+                run_tool("check_availability", args), timeout=10.0
+            )
         except asyncio.TimeoutError:
-            result = {"error": "Tool timed out", "message": "Request took too long, please try again."}
-
-        # Convert result dict → human-friendly string the LLM can read out
-        if isinstance(result, dict):
-            output = result.get("message") or json.dumps(result)
-        else:
-            output = str(result)
-
-        return JSONResponse({"output": output, "result": result})
-
+            result = {"message": "Request timed out, please try again."}
+        return JSONResponse({"output": _format_output(result), "result": result})
     except Exception as e:
-        print(f"LiveKit action error: {e}")
-        return JSONResponse({"output": f"Error: {e}", "error": str(e)}, status_code=200)
+        print(f"[check_availability] error: {e}")
+        return JSONResponse({"output": f"Error: {e}"}, status_code=200)
+
+
+@app.post("/livekit/book_appointment")
+async def livekit_book_appointment(request: Request):
+    """
+    LiveKit HTTP tool — book_appointment
+    LiveKit sends the tool parameters directly as the POST body:
+      {"name": "...", "email": "...", "date": "...", "time": "...", "topic": "..."}
+    """
+    try:
+        args = await request.json()
+        print(f"[book_appointment] args: {args}")
+        try:
+            result = await asyncio.wait_for(
+                run_tool("book_appointment", args), timeout=10.0
+            )
+        except asyncio.TimeoutError:
+            result = {"message": "Request timed out, please try again."}
+        return JSONResponse({"output": _format_output(result), "result": result})
+    except Exception as e:
+        print(f"[book_appointment] error: {e}")
+        return JSONResponse({"output": f"Error: {e}"}, status_code=200)
 
 
 @app.post("/vapi/webhook")

@@ -4,6 +4,8 @@ import traceback
 from datetime import datetime, timedelta
 
 from google.oauth2 import service_account
+from google.oauth2.credentials import Credentials
+from google.auth.transport.requests import Request
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 
@@ -12,11 +14,25 @@ CALENDAR_ID = os.getenv("GOOGLE_CALENDAR_ID", "primary")
 
 
 def _get_service():
-    creds_raw = os.getenv("GOOGLE_SERVICE_ACCOUNT_JSON", "")
-    if creds_raw:
-        creds_info = json.loads(creds_raw)
+    """
+    Auth priority:
+    1. GOOGLE_TOKEN_JSON  — OAuth2 user credentials (preferred, full calendar access)
+    2. GOOGLE_SERVICE_ACCOUNT_JSON — service account fallback
+    """
+    # ── OAuth2 path ───────────────────────────────────────────────────────────
+    token_raw = os.getenv("GOOGLE_TOKEN_JSON", "")
+    if token_raw:
+        token_info = json.loads(token_raw)
+        creds = Credentials.from_authorized_user_info(token_info, SCOPES)
+        if creds.expired and creds.refresh_token:
+            creds.refresh(Request())
+        return build("calendar", "v3", credentials=creds)
+
+    # ── Service account fallback ──────────────────────────────────────────────
+    sa_raw = os.getenv("GOOGLE_SERVICE_ACCOUNT_JSON", "")
+    if sa_raw:
         creds = service_account.Credentials.from_service_account_info(
-            creds_info, scopes=SCOPES
+            json.loads(sa_raw), scopes=SCOPES
         )
     else:
         creds = service_account.Credentials.from_service_account_file(

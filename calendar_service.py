@@ -1,9 +1,11 @@
 import json
 import os
+import traceback
 from datetime import datetime, timedelta
 
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
+from googleapiclient.errors import HttpError
 
 SCOPES = ["https://www.googleapis.com/auth/calendar"]
 CALENDAR_ID = os.getenv("GOOGLE_CALENDAR_ID", "primary")
@@ -89,7 +91,8 @@ def check_availability(date: str, duration_minutes: int = 30) -> dict:
             }
 
     except Exception as e:
-        print(f"check_availability error: {e}")
+        tb = traceback.format_exc()
+        print(f"check_availability error [{type(e).__name__}]: {e}\n{tb}")
         # Graceful demo fallback
         try:
             friendly = datetime.strptime(date, "%Y-%m-%d").strftime("%A, %B %d")
@@ -148,10 +151,20 @@ def book_appointment(
             ),
         }
 
-    except Exception as e:
-        print(f"book_appointment error: {e}")
+    except HttpError as e:
+        tb = traceback.format_exc()
+        detail = e.reason if hasattr(e, "reason") else str(e)
+        print(f"book_appointment HttpError [{e.status_code}]: {detail}\n{tb}")
         return {
             "success": False,
-            "error": str(e),
+            "error": f"HTTP {e.status_code}: {detail}",
+            "message": "I had trouble booking that — please try again or contact us directly.",
+        }
+    except Exception as e:
+        tb = traceback.format_exc()
+        print(f"book_appointment error [{type(e).__name__}]: {e!r}\n{tb}")
+        return {
+            "success": False,
+            "error": f"{type(e).__name__}: {e!r}",
             "message": "I had trouble booking that — please try again or contact us directly.",
         }

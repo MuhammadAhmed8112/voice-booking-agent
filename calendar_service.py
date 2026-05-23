@@ -20,16 +20,17 @@ def _get_service():
     2. GOOGLE_SERVICE_ACCOUNT_JSON — service account fallback
     """
     # ── OAuth2 path ───────────────────────────────────────────────────────────
-    token_raw = os.getenv("GOOGLE_TOKEN_JSON", "")
+    token_raw = os.getenv("GOOGLE_TOKEN_JSON", "").strip()
     if token_raw:
         token_info = json.loads(token_raw)
         creds = Credentials.from_authorized_user_info(token_info, SCOPES)
         if creds.expired and creds.refresh_token:
             creds.refresh(Request())
+        print(f"[auth] using OAuth2 | expired={creds.expired}")
         return build("calendar", "v3", credentials=creds)
 
     # ── Service account fallback ──────────────────────────────────────────────
-    sa_raw = os.getenv("GOOGLE_SERVICE_ACCOUNT_JSON", "")
+    sa_raw = os.getenv("GOOGLE_SERVICE_ACCOUNT_JSON", "").strip()
     if sa_raw:
         creds = service_account.Credentials.from_service_account_info(
             json.loads(sa_raw), scopes=SCOPES

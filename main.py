@@ -50,6 +50,56 @@ async def run_tool(fn_name: str, args: dict) -> dict:
         return {"error": f"Unknown function: {fn_name}"}
 
 
+@app.post("/livekit/actions")
+async def livekit_actions(request: Request):
+    """
+    Handle LiveKit Action webhook calls.
+    LiveKit sends:  POST {"name": "fn_name", "arguments": {...}}
+    We respond:     {"output": "<string result for the LLM>"}
+    """
+    try:
+        body = await request.json()
+        print(f"LiveKit action received: {json.dumps(body)}")
+
+        # Normalise across possible field-name variants LiveKit may use
+        fn_name = (
+            body.get("name")
+            or body.get("function_name")
+            or body.get("action")
+            or ""
+        )
+        args = (
+            body.get("arguments")
+            or body.get("parameters")
+            or body.get("args")
+            or {}
+        )
+        if isinstance(args, str):
+            try:
+                args = json.loads(args)
+            except json.JSONDecodeError:
+                args = {}
+
+        print(f"LiveKit tool: {fn_name} | args: {args}")
+
+        try:
+            result = await asyncio.wait_for(run_tool(fn_name, args), timeout=10.0)
+        except asyncio.TimeoutError:
+            result = {"error": "Tool timed out", "message": "Request took too long, please try again."}
+
+        # Convert result dict → human-friendly string the LLM can read out
+        if isinstance(result, dict):
+            output = result.get("message") or json.dumps(result)
+        else:
+            output = str(result)
+
+        return JSONResponse({"output": output, "result": result})
+
+    except Exception as e:
+        print(f"LiveKit action error: {e}")
+        return JSONResponse({"output": f"Error: {e}", "error": str(e)}, status_code=200)
+
+
 @app.post("/vapi/webhook")
 async def vapi_webhook(request: Request):
     try:

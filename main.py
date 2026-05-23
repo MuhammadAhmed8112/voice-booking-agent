@@ -1,5 +1,7 @@
 import json
 import os
+import asyncio
+from concurrent.futures import ThreadPoolExecutor
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from dotenv import load_dotenv
@@ -8,6 +10,7 @@ from calendar_service import check_availability, book_appointment
 load_dotenv()
 
 app = FastAPI(title="Voice Booking Agent — Webhook")
+executor = ThreadPoolExecutor(max_workers=4)
 
 
 @app.get("/")
@@ -18,6 +21,33 @@ async def root():
 @app.get("/health")
 async def health():
     return {"status": "healthy"}
+
+
+async def run_tool(fn_name: str, args: dict) -> dict:
+    """Run calendar tools in a thread pool to avoid blocking the event loop."""
+    loop = asyncio.get_event_loop()
+
+    if fn_name == "check_availability":
+        return await loop.run_in_executor(
+            executor,
+            lambda: check_availability(
+                date=args.get("date", ""),
+                duration_minutes=args.get("duration_minutes", 30),
+            ),
+        )
+    elif fn_name == "book_appointment":
+        return await loop.run_in_executor(
+            executor,
+            lambda: book_appointment(
+                name=args.get("name", ""),
+                email=args.get("email", ""),
+                date=args.get("date", ""),
+                time=args.get("time", ""),
+                topic=args.get("topic", "Discovery Call"),
+            ),
+        )
+    else:
+        return {"error": f"Unknown function: {fn_name}"}
 
 
 @app.post("/vapi/webhook")
@@ -36,11 +66,10 @@ async def vapi_webhook(request: Request):
                     for item in message.get("toolWithToolCallList", [])
                 ]
 
-            results = []
-            for tool_call in tool_calls:
+            # Run all tool calls concurrently
+            async def process_tool_call(tool_call):
                 if not tool_call:
-                    continue
-
+                    return None
                 fn = tool_call.get("function", {})
                 fn_name = fn.get("name", "")
                 args_raw = fn.get("arguments", "{}")
@@ -53,30 +82,19 @@ async def vapi_webhook(request: Request):
 
                 print(f"Tool call: {fn_name} | Args: {args}")
 
-                if fn_name == "check_availability":
-                    result = check_availability(
-                        date=args.get("date", ""),
-                        duration_minutes=args.get("duration_minutes", 30),
-                    )
-                elif fn_name == "book_appointment":
-                    result = book_appointment(
-                        name=args.get("name", ""),
-                        email=args.get("email", ""),
-                        date=args.get("date", ""),
-                        time=args.get("time", ""),
-                        topic=args.get("topic", "Discovery Call"),
-                    )
-                else:
-                    result = {"error": f"Unknown function: {fn_name}"}
+                # 10-second timeout per tool call
+                try:
+                    result = await asyncio.wait_for(run_tool(fn_name, args), timeout=10.0)
+                except asyncio.TimeoutError:
+                    result = {"error": "Tool timed out", "message": "Request took too long, please try again."}
 
-                results.append({
-                    "toolCallId": tool_call_id,
-                    "result": json.dumps(result),
-                })
+                return {"toolCallId": tool_call_id, "result": json.dumps(result)}
+
+            tasks = [process_tool_call(tc) for tc in tool_calls]
+            results = [r for r in await asyncio.gather(*tasks) if r is not None]
 
             return JSONResponse({"results": results})
 
-        # All other event types (status-update, end-of-call-report, etc.)
         return JSONResponse({"status": "ok"})
 
     except Exception as e:

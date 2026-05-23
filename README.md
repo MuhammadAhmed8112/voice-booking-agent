@@ -1,3 +1,12 @@
+---
+title: Voice Booking Agent
+emoji: 📞
+colorFrom: blue
+colorTo: green
+sdk: docker
+pinned: false
+---
+
 # 📞 AI Voice Booking Agent
 
 An AI voice agent that handles inbound calls, qualifies callers, checks real Google Calendar availability, and books discovery calls — fully automated.
@@ -18,7 +27,7 @@ An AI voice agent that handles inbound calls, qualifies callers, checks real Goo
 | LLM | Groq — Llama 3.3 70B (free) |
 | Voice | ElevenLabs Rachel (via Vapi) |
 | Calendar | Google Calendar API |
-| Webhook | FastAPI on Render (free) |
+| Webhook | FastAPI on HuggingFace Spaces (free) |
 
 ## Setup
 
@@ -36,10 +45,12 @@ cp .env.example .env
 - Share your calendar with the service account email
 - Copy Calendar ID from Calendar settings
 
-### 3. Deploy webhook (Render)
-- Connect this GitHub repo to [render.com](https://render.com)
-- Set environment variables in Render dashboard
-- Copy the deployed URL
+### 3. Deploy webhook (HuggingFace Spaces)
+- Go to [huggingface.co](https://huggingface.co) → New Space → **Docker** SDK
+- Name it `voice-booking-agent`
+- Push this repo to the Space
+- Add secrets in Space Settings (same env vars as above)
+- Your webhook URL: `https://your-username-voice-booking-agent.hf.space`
 
 ### 4. Create Vapi assistant
 ```bash
